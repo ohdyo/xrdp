@@ -44,10 +44,23 @@ RUN set -eux; \
 COPY ./startwm.sh /usr/local/bin/startwm.sh
 COPY ./start-xrdp.sh /usr/local/bin/start-xrdp.sh
 
-# 사용자/스크립트/권한/링크
+# 기존 UID/GID 충돌 해결 후 사용자 생성
 RUN set -eux; \
 	chmod +x /usr/local/bin/startwm.sh /usr/local/bin/start-xrdp.sh; \
 	ln -sf /usr/local/bin/startwm.sh /etc/xrdp/startwm.sh; \
+	# 기존 UID 1000 사용자가 있다면 제거
+	if id -u ${USER_UID} >/dev/null 2>&1; then \
+		userdel $(id -nu ${USER_UID}) 2>/dev/null || true; \
+	fi; \
+	# 기존 GID 1000 그룹이 있다면 제거
+	if getent group ${USER_GID} >/dev/null 2>&1; then \
+		groupdel $(getent group ${USER_GID} | cut -d: -f1) 2>/dev/null || true; \
+	fi; \
+	# 사용자명으로 된 그룹이 있다면 제거
+	if getent group ${USER_NAME} >/dev/null 2>&1; then \
+		groupdel ${USER_NAME} 2>/dev/null || true; \
+	fi; \
+	# 새로운 그룹과 사용자 생성
 	groupadd -g ${USER_GID} ${USER_NAME}; \
 	useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash ${USER_NAME}; \
 	echo "${USER_NAME}:${USER_PASSWORD}" | chpasswd; \
