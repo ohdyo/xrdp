@@ -32,11 +32,13 @@ RUN set -eux; \
 			gstreamer1.0-libav gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
 			gvfs gvfs-backends gvfs-fuse
 
-# 4) 오디오  및 VLC
+# 4) 오디오, VLC 및 개발 도구
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        pulseaudio pulseaudio-utils pavucontrol xfce4-pulseaudio-plugin vlc; \
+        pulseaudio pulseaudio-utils pavucontrol xfce4-pulseaudio-plugin vlc \
+        git build-essential autotools-dev autoconf libtool libpulse-dev \
+        meson ninja-build wget; \
     rm -rf /var/lib/apt/lists/*;
 
 COPY ./startwm.sh /usr/local/bin/startwm.sh

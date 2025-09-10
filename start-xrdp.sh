@@ -16,6 +16,14 @@ echo "[start-xrdp] Preparing audio system..."
 mkdir -p /run/user/1000/pulse
 chown -R ${USER_NAME:-kbs}:${USER_NAME:-kbs} /run/user/1000 2>/dev/null || true
 
+# 기존 XRDP 프로세스 및 PID 파일 정리
+echo "[start-xrdp] Cleaning up previous XRDP processes..."
+pkill -f xrdp-sesman 2>/dev/null || true
+pkill -f xrdp 2>/dev/null || true
+rm -f /var/run/xrdp/xrdp-sesman.pid 2>/dev/null || true
+rm -f /var/run/xrdp/xrdp.pid 2>/dev/null || true
+sleep 1
+
 echo "[start-xrdp] Starting XRDP sesman..."
 /usr/sbin/xrdp-sesman &
 sleep 2
