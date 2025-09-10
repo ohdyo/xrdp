@@ -18,6 +18,7 @@ RUN set -eux; \
 
 # 2) 한국어/로케일 및 폰트 패키지
 RUN set -eux; \
+		apt-get update; \
 		apt-get install -y\
 			locales language-pack-ko fonts-noto-cjk fonts-noto-color-emoji fonts-nanum; \
 		locale-gen ko_KR.UTF-8 en_US.UTF-8; \
@@ -25,6 +26,7 @@ RUN set -eux; \
 
 # 3) 이미지/영상 썸네일 및 미디어 태그/코덱/GVFS 관련 패키지
 RUN set -eux; \
+		apt-get update; \
 		apt-get install -y \
 			tumbler ffmpegthumbnailer thunar-media-tags-plugin \
 			gstreamer1.0-libav gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
@@ -32,9 +34,10 @@ RUN set -eux; \
 
 # 4) 오디오  및 VLC
 RUN set -eux; \
-    apt-get install -y \
-        pulseaudio pulseaudio-utils pavucontrol xfce4-pulseaudio-plugin vlc \
-        git build-essential autoconf libtool pkg-config dpkg-dev libpulse-dev ca-certificates sudo;
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        pulseaudio pulseaudio-utils pavucontrol xfce4-pulseaudio-plugin vlc; \
+    rm -rf /var/lib/apt/lists/*;
 
 COPY ./startwm.sh /usr/local/bin/startwm.sh
 COPY ./start-xrdp.sh /usr/local/bin/start-xrdp.sh
@@ -49,7 +52,10 @@ RUN set -eux; \
 	sed -i 's/\r$//' /usr/local/bin/start-xrdp.sh; \
 	adduser xrdp ssl-cert; \
 	install -d -m 755 /var/run/xrdp; \
-	chown xrdp:xrdp /var/run/xrdp
+	chown xrdp:xrdp /var/run/xrdp; \
+	groupadd -f tsusers; \
+	usermod -a -G tsusers ${USER_NAME}; \
+	echo "allowed_users=anybody" >> /etc/X11/Xwrapper.config
 
 EXPOSE 3389
 ENTRYPOINT ["/usr/local/bin/start-xrdp.sh"]

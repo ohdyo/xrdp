@@ -1,48 +1,132 @@
 #!/bin/bash
 
-# 환경 변수 로드
-if test -r /etc/profile; then
-    . /etc/profile
+# XRDP 오디오 설정 자동화 스크립트
+# 사용법: ./container_audio_setting.sh [컨테이너명]
+# 예시: ./container_audio_setting.sh test
+
+# 컨테이너 이름 설정
+CONTAINER_NAME=${1:-"test"}
+
+echo "=================================================="
+echo "XRDP 오디오 모듈 설정 스크립트"
+echo "컨테이너: $CONTAINER_NAME"
+echo "=================================================="
+
+# 컨테이너 실행 상태 확인
+if ! docker ps | grep -q "$CONTAINER_NAME"; then
+    echo "오류: 컨테이너 '$CONTAINER_NAME'이 실행되지 않았습니다."
+    echo "컨테이너를 먼저 실행해주세요:"
+    echo "docker run -d -p 3389:3389 --name $CONTAINER_NAME [이미지명]"
+    exit 1
 fi
 
-if test -r /etc/default/locale; then
-    . /etc/default/locale
-    test -z "${LANG+x}" || export LANG
-    test -z "${LANGUAGE+x}" || export LANGUAGE
-    test -z "${LC_ALL+x}" || export LC_ALL
-fi
+echo "컨테이너 '$CONTAINER_NAME' 확인됨"
 
-# XRDP 사용자 세션 시작 스크립트 (기본 버전)
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+# 1단계: 컨테이너 내에서 XRDP 오디오 모듈 설정하기
+echo ""
+echo "1단계: 컨테이너 내에서 XRDP 오디오 모듈 설정하기"
+echo "------------------------------------------------------"
 
-echo "[startwm] Starting XRDP user session..."
-echo "[startwm] User: $(whoami), UID: $(id -u)"
+# 필요한 패키지 설치 및 업데이트
+echo "필요한 패키지 설치 중..."
+docker exec -it "$CONTAINER_NAME" bash -c "
+apt-get update && apt-get install -y wget meson ninja-build
+"
 
-# 런타임 디렉토리 설정
-if [ ! -d "$XDG_RUNTIME_DIR" ]; then
-    mkdir -p "$XDG_RUNTIME_DIR"
-    chmod 700 "$XDG_RUNTIME_DIR"
-fi
+# 소스 저장소 추가
+echo "소스 저장소 추가 중..."
+docker exec -it "$CONTAINER_NAME" bash -c "
+echo 'deb-src http://archive.ubuntu.com/ubuntu jammy main' >> /etc/apt/sources.list
+"
 
-# PulseAudio 설정 및 시작
-echo "[startwm] Setting up PulseAudio..."
-export PULSE_RUNTIME_PATH="$XDG_RUNTIME_DIR/pulse"
-mkdir -p "$PULSE_RUNTIME_PATH"
+# PulseAudio 소스 다운로드 및 빌드
+echo "PulseAudio 소스 다운로드 및 빌드 중..."
+docker exec -it "$CONTAINER_NAME" bash -c "
+apt-get update && apt-get build-dep -y pulseaudio
+cd /tmp && apt-get source pulseaudio
+cd pulseaudio-15.99.1+dfsg1 && meson build
+ninja -C build
+"
 
-# PulseAudio 데몬 시작
-pulseaudio --start --log-target=syslog 2>/dev/null || true
-sleep 2
+# XRDP 모듈 다운로드 및 컴파일
+echo "XRDP 모듈 다운로드 및 컴파일 중..."
+docker exec -it "$CONTAINER_NAME" bash -c "
+cd /tmp && git clone https://github.com/neutrinolabs/pulseaudio-module-xrdp.git
+cd pulseaudio-module-xrdp && ./bootstrap && ./configure PULSE_DIR=/tmp/pulseaudio-15.99.1+dfsg1 PULSE_CONFIG_DIR=/tmp/pulseaudio-15.99.1+dfsg1/build
+make
+"
 
-# 기본 오디오 싱크 생성
-pactl load-module module-null-sink sink_name=virtual_output sink_properties=device.description="Virtual_Audio_Output" 2>/dev/null || true
-pactl set-default-sink virtual_output 2>/dev/null || true
+# 모듈 설치
+echo "XRDP 모듈 설치 중..."
+docker exec -it "$CONTAINER_NAME" bash -c "
+cd /tmp/pulseaudio-module-xrdp && make install
+"
 
-# 네트워크 프로토콜 활성화 (RDP 오디오 지원)
-pactl load-module module-native-protocol-tcp auth-anonymous=1 port=4713 2>/dev/null || true
+echo ""
+echo "2단계: 사용자로 PulseAudio 재시작 및 XRDP 모듈 로드"
+echo "------------------------------------------------------"
 
-echo "[startwm] Audio setup completed"
+# PulseAudio 종료 및 재시작
+echo "PulseAudio 재시작 중..."
+docker exec -it "$CONTAINER_NAME" su - kbs -c "
+export XDG_RUNTIME_DIR=/run/user/1000
+mkdir -p /run/user/1000
+chmod 700 /run/user/1000
+pulseaudio --kill 2>/dev/null || true
+pulseaudio --start
+"
 
-echo "[startwm] Starting XFCE desktop environment..."
+# XRDP 모듈 로드
+echo "XRDP 모듈 로드 중..."
+docker exec -it "$CONTAINER_NAME" su - kbs -c "
+export XDG_RUNTIME_DIR=/run/user/1000
+pactl load-module module-xrdp-sink
+pactl load-module module-xrdp-source
+"
 
-# XFCE 데스크톱 시작
-exec startxfce4
+# 기본 오디오 장치 설정
+echo "기본 오디오 장치를 XRDP로 설정 중..."
+docker exec -it "$CONTAINER_NAME" su - kbs -c "
+export XDG_RUNTIME_DIR=/run/user/1000
+pactl set-default-sink xrdp-sink
+pactl set-default-source xrdp-source
+"
+
+# 현재 오디오 설정 확인
+echo "현재 오디오 설정 확인:"
+docker exec -it "$CONTAINER_NAME" su - kbs -c "
+export XDG_RUNTIME_DIR=/run/user/1000
+pactl info | grep -E '기본 싱크|기본 소스|Default Sink|Default Source'
+"
+
+# 사용자 설정 파일 생성
+echo ""
+echo "3단계: 사용자 설정 파일 생성"
+echo "------------------------------------------------------"
+
+echo "PulseAudio 자동 설정 파일 생성 중..."
+docker exec -it "$CONTAINER_NAME" su - kbs -c "
+mkdir -p ~/.config/pulse
+cat > ~/.config/pulse/default.pa << 'EOF'
+.include /etc/pulse/default.pa
+load-module module-xrdp-sink
+load-module module-xrdp-source
+set-default-sink xrdp-sink
+set-default-source xrdp-source
+EOF
+"
+
+echo "VLC 오디오 설정 파일 생성 중..."
+docker exec -it "$CONTAINER_NAME" su - kbs -c "
+mkdir -p ~/.config/vlc
+echo 'aout=pulse' > ~/.config/vlc/vlcrc
+"
+
+echo ""
+echo "=================================================="
+echo "XRDP 오디오 설정 완료!"
+echo "=================================================="
+echo ""
+echo "설정을 영구적으로 저장하려면:"
+echo "docker commit $CONTAINER_NAME xrdp-korean-audio:latest"
+echo ""
