@@ -30,13 +30,23 @@ echo "------------------------------------------------------"
 # 필요한 패키지 설치 및 업데이트
 echo "필요한 패키지 설치 중..."
 docker exec -it "$CONTAINER_NAME" bash -c "
-apt-get update && apt-get install -y wget meson ninja-build
+apt-get update && apt-get install -y \
+    git build-essential autotools-dev autoconf libtool libpulse-dev \
+    meson ninja-build wget cmake pkg-config libsndfile1-dev \
+    automake intltool libdbus-1-dev libglib2.0-dev \
+    libcap-dev libsystemd-dev libavahi-client-dev \
+    libasyncns-dev libbluetooth-dev libfftw3-dev \
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+    libjack-jackd2-dev liborc-0.4-dev libsbc-dev \
+    libsoxr-dev libspeexdsp-dev libtdb-dev libwebrtc-audio-processing-dev \
+    libx11-xcb-dev libxcb1-dev libxtst6
 "
 
 # 소스 저장소 추가
 echo "소스 저장소 추가 중..."
 docker exec -it "$CONTAINER_NAME" bash -c "
 echo 'deb-src http://archive.ubuntu.com/ubuntu jammy main' >> /etc/apt/sources.list
+apt-get update
 "
 
 # PulseAudio 소스 다운로드 및 빌드
